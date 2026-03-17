@@ -1,14 +1,11 @@
 import os
 import json
+import hashlib
 from groq import Groq
 from dotenv import load_dotenv
 from ddgs import DDGS
 import streamlit as st
 from datetime import datetime
-from streamlit_google_auth import Authenticate
-import json
-import tempfile
-
 
 load_dotenv()
 
@@ -29,6 +26,11 @@ st.markdown("""
 .site-title em { font-style: italic; color: #8b6914; }
 .site-desc { font-family: 'Inter', sans-serif; font-size: 13px; color: #999; margin-top: 4px; letter-spacing: 0.3px; text-transform: uppercase; }
 
+.login-box { text-align: center; padding: 60px 20px 20px 20px; }
+.login-title { font-family: 'Playfair Display', serif; font-size: 2.8em; color: #1a1a1a; margin-bottom: 8px; }
+.login-title em { font-style: italic; color: #8b6914; }
+.login-sub { font-family: 'Inter', sans-serif; font-size: 15px; color: #888; margin-bottom: 40px; }
+
 .user-row { display: flex; justify-content: flex-end; margin: 16px 0 4px 0; }
 .user-bubble { background: #1a1a1a; color: #fff; padding: 13px 18px; border-radius: 18px 18px 4px 18px; max-width: 72%; font-family: 'Inter', sans-serif; font-size: 15px; line-height: 1.65; }
 .bot-row { display: flex; justify-content: flex-start; margin: 16px 0 4px 0; }
@@ -37,11 +39,6 @@ st.markdown("""
 .msg-meta-right { text-align: right; }
 .tool-pill { display: inline-block; font-family: 'Inter', sans-serif; font-size: 11px; color: #8b6914; border: 1px solid #e0d0a0; background: #fdf8ec; padding: 2px 10px; border-radius: 10px; margin-bottom: 6px; }
 
-.login-box { text-align: center; padding: 80px 20px; }
-.login-title { font-family: 'Playfair Display', serif; font-size: 2.5em; color: #1a1a1a; margin-bottom: 8px; }
-.login-title em { font-style: italic; color: #8b6914; }
-.login-sub { font-family: 'Inter', sans-serif; font-size: 15px; color: #888; margin-bottom: 40px; }
-
 .stTextInput > div > div > input { background: #ffffff !important; border: 1px solid #e0e0dc !important; border-radius: 12px !important; padding: 14px 18px !important; font-family: 'Inter', sans-serif !important; font-size: 15px !important; color: #1a1a1a !important; }
 .stTextInput > div > div > input:focus { border-color: #8b6914 !important; }
 .stButton > button { background: #1a1a1a !important; color: #ffffff !important; border: none !important; border-radius: 12px !important; padding: 14px 20px !important; font-family: 'Inter', sans-serif !important; font-size: 14px !important; font-weight: 500 !important; width: 100% !important; }
@@ -49,42 +46,72 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---- GOOGLE AUTH ----
-creds = {
-    "web": {
-        "client_id": st.secrets["google_credentials"]["client_id"],
-        "client_secret": st.secrets["google_credentials"]["client_secret"],
-        "redirect_uris": ["https://medhabiai.streamlit.app"],
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token"
-    }
-}
-with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
-    json.dump(creds, f)
-    creds_path = f.name
+# ---- USER DATABASE ----
+USERS_FILE = "users.json"
 
-authenticator = Authenticate(
-    secret_credentials_path=creds_path,
-    cookie_name="medhabi_cookie",
-    cookie_key=st.secrets.get("COOKIE_PASSWORD", "default_secret"),
-    redirect_uri="https://medhabiai.streamlit.app/",
-)
-authenticator.check_authentification()
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-if not st.session_state.get("connected"):
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=2)
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+# ---- LOGIN / SIGNUP PAGE ----
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
     st.markdown("""
     <div class="login-box">
         <div class="login-title">Med<em>habi.</em></div>
         <div class="login-sub">Your personal life coach — calm, honest, grounded</div>
     </div>
     """, unsafe_allow_html=True)
-    authenticator.login()
+
+    tab1, tab2 = st.tabs(["Sign In", "Create Account"])
+
+    with tab1:
+        username = st.text_input("Username", key="login_user", placeholder="Enter your username")
+        password = st.text_input("Password", type="password", key="login_pass", placeholder="Enter your password")
+        if st.button("Sign In"):
+            users = load_users()
+            if username in users and users[username]["password"] == hash_password(password):
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.session_state.name = users[username]["name"]
+                st.rerun()
+            else:
+                st.error("Invalid username or password.")
+
+    with tab2:
+        new_name = st.text_input("Your name", key="reg_name", placeholder="What should Medhabi call you?")
+        new_user = st.text_input("Username", key="reg_user", placeholder="Choose a username")
+        new_pass = st.text_input("Password", type="password", key="reg_pass", placeholder="Choose a password")
+        if st.button("Create Account"):
+            if not new_name or not new_user or not new_pass:
+                st.error("Please fill in all fields.")
+            else:
+                users = load_users()
+                if new_user in users:
+                    st.error("Username already taken.")
+                else:
+                    users[new_user] = {"name": new_name, "password": hash_password(new_pass)}
+                    save_users(users)
+                    st.session_state.logged_in = True
+                    st.session_state.username = new_user
+                    st.session_state.name = new_name
+                    st.rerun()
     st.stop()
 
-# ---- USER INFO ----
-user_email = st.session_state.get("email", "user")
-user_name = st.session_state.get("name", "Friend")
-user_picture = st.session_state.get("picture", "")
+# ---- LOGGED IN ----
+username = st.session_state.username
+user_name = st.session_state.name
 
 # ---- TOOLS ----
 def search_web(query: str) -> str:
@@ -108,30 +135,8 @@ def calculate(expression: str) -> str:
         return f"Error: {e}"
 
 tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_web",
-            "description": "Search the internet for real-time information",
-            "parameters": {
-                "type": "object",
-                "properties": {"query": {"type": "string"}},
-                "required": ["query"]
-            }
-        }
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "calculate",
-            "description": "Evaluate a math expression",
-            "parameters": {
-                "type": "object",
-                "properties": {"expression": {"type": "string"}},
-                "required": ["expression"]
-            }
-        }
-    }
+    {"type": "function", "function": {"name": "search_web", "description": "Search the internet for real-time information", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
+    {"type": "function", "function": {"name": "calculate", "description": "Evaluate a math expression", "parameters": {"type": "object", "properties": {"expression": {"type": "string"}}, "required": ["expression"]}}}
 ]
 
 def run_tool(name, args):
@@ -143,8 +148,7 @@ def run_tool(name, args):
 
 # ---- PER USER HISTORY ----
 def get_history_file():
-    safe_email = user_email.replace("@", "_").replace(".", "_")
-    return f"history_{safe_email}.json"
+    return f"history_{username}.json"
 
 def load_history():
     f = get_history_file()
@@ -212,10 +216,8 @@ def chat(user_message):
 
 # ---- SIDEBAR ----
 with st.sidebar:
-    if user_picture:
-        st.image(user_picture, width=60)
-    st.markdown(f"**{user_name}**")
-    st.markdown(f"*{user_email}*")
+    st.markdown(f"### {user_name}")
+    st.markdown(f"*@{username}*")
     st.markdown("---")
     st.markdown("Life challenges  \nGoal clarity  \nMindset  \nHard truths")
     st.markdown("---")
@@ -225,7 +227,8 @@ with st.sidebar:
         save_history([])
         st.rerun()
     if st.button("Sign out"):
-        authenticator.logout()
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
         st.rerun()
     st.markdown(f"{len(st.session_state.chat_display)} messages")
 

@@ -2,4 +2,3 @@ groq
 python-dotenv
 ddgs
 streamlit
-streamlit-google-auth
