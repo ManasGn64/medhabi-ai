@@ -6,6 +6,9 @@ from ddgs import DDGS
 import streamlit as st
 from datetime import datetime
 from streamlit_google_auth import Authenticate
+import json
+import tempfile
+
 
 load_dotenv()
 
@@ -47,13 +50,25 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---- GOOGLE AUTH ----
+creds = {
+    "web": {
+        "client_id": st.secrets["google_credentials"]["client_id"],
+        "client_secret": st.secrets["google_credentials"]["client_secret"],
+        "redirect_uris": ["https://medhabiai.streamlit.app/"],
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token"
+    }
+}
+with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+    json.dump(creds, f)
+    creds_path = f.name
+
 authenticator = Authenticate(
-    secret_credentials_path="google_credentials.json",
+    secret_credentials_path=creds_path,
     cookie_name="medhabi_cookie",
-    cookie_key=os.getenv("COOKIE_PASSWORD"),
+    cookie_key=st.secrets.get("COOKIE_PASSWORD", "default_secret"),
     redirect_uri="https://medhabiai.streamlit.app/",
 )
-
 authenticator.check_authentification()
 
 if not st.session_state.get("connected"):
