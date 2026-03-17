@@ -54,7 +54,7 @@ creds = {
     "web": {
         "client_id": st.secrets["google_credentials"]["client_id"],
         "client_secret": st.secrets["google_credentials"]["client_secret"],
-        "redirect_uris": ["https://medhabiai.streamlit.app/"],
+        "redirect_uris": ["https://medhabiai.streamlit.app"],
         "auth_uri": "https://accounts.google.com/o/oauth2/auth",
         "token_uri": "https://oauth2.googleapis.com/token"
     }
